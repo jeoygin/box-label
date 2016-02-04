@@ -8,6 +8,20 @@
 using namespace cv;
 using namespace std;
 
+class Box {
+public:
+    Box();
+    Box(const Rect& r);
+    Box(const Rect& r, const string& ct);
+
+    Rect rect;
+    string content;
+};
+
+inline Box::Box(): rect(Rect(0, 0, 0, 0)) {}
+inline Box::Box(const Rect& r): rect(r) {}
+inline Box::Box(const Rect& r, const string& ct): rect(r), content(ct) {}
+
 Mat img, display;
 Point pt1(0, 0);
 Point pt2(0, 0);
@@ -15,8 +29,11 @@ Rect selectRect(0, 0, 0, 0);
 Rect originRect;
 
 bool clicked = false;
-bool selected = false;
+bool moving = false;
+Box* selected = NULL;
 int unitSize = 5;
+
+vector<Box> boxes;
 
 int makedirs(char * path, mode_t mode) {
     struct stat st = {0};
@@ -43,8 +60,14 @@ int makedirs(char * path, mode_t mode) {
 void showImage(string text="") {
     display = img.clone();
 
-    if (selectRect.width > 0 && selectRect.height > 0) {
-        rectangle(display, selectRect, Scalar(0, 0, 255), 1, 8, 0);
+    for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
+        if (it->rect.width > 0 && it->rect.height > 0) {
+            if (&(*it) == selected) {
+                rectangle(display, it->rect, Scalar(0, 0, 255), 1, 8, 0);
+            } else {
+                rectangle(display, it->rect, Scalar(0, 255, 0), 1, 8, 0);
+            }
+        }
     }
 
     if (!text.empty()) {
@@ -85,30 +108,39 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
         clicked = true;
         pt1.x = pt2.x = x;
         pt1.y = pt2.y = y;
-        if (selectRect.contains(Point(x, y))) {
-            selected = true;
-            originRect = Rect(selectRect);
+        selected = NULL;
+        moving = false;
+        for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
+            if (it->rect.contains(pt1)) {
+                originRect = Rect(it->rect);
+                selected = &(*it);
+                break;
+            }
+        }
+        if (selected) {
+            moving = true;
         } else {
-            selected = false;
+            boxes.push_back(Box(Rect(x, y, 1, 1)));
+            selected = &boxes.back();
         }
         break;
     case CV_EVENT_LBUTTONUP:
         clicked = false;
-        selected = false;
+        moving = false;
         break;
     case CV_EVENT_MOUSEMOVE:
         if (clicked) {
             int x0 = min(pt1.x, pt2.x);
             int y0 = min(pt1.y, pt2.y);
-            if (selected) {
+            if (moving) {
                 x0 = originRect.x + pt2.x - pt1.x;
                 y0 = originRect.y + pt2.y - pt1.y;
             } else {
-                selectRect.width = max(pt1.x, pt2.x) - x0 + 1;
-                selectRect.height = max(pt1.y, pt2.y) - y0 + 1;
+                selected->rect.width = max(pt1.x, pt2.x) - x0 + 1;
+                selected->rect.height = max(pt1.y, pt2.y) - y0 + 1;
             }
-            selectRect.x = x0;
-            selectRect.y = y0;
+            selected->rect.x = x0;
+            selected->rect.y = y0;
         }
         break;
     default:
@@ -126,22 +158,33 @@ void changeUnitSize(int value) {
 }
 
 void move(int x, int y) {
-    if (selectRect.width > 0 && selectRect.height > 0) {
-        selectRect.x = min(max(0, selectRect.x + unitSize * x), img.cols - selectRect.width);
-        selectRect.y = min(max(0, selectRect.y + unitSize * y), img.rows - selectRect.height);
+    if (selected && selected->rect.width > 0 && selected->rect.height > 0) {
+        selected->rect.x = min(max(0, selected->rect.x + unitSize * x), img.cols - selected->rect.width);
+        selected->rect.y = min(max(0, selected->rect.y + unitSize * y), img.rows - selected->rect.height);
         showImage();
     }
 }
 
 void changeSize(int x, int y) {
-    if (selectRect.width > 0 && selectRect.height > 0) {
-        if (selectRect.width + x * unitSize > 0) {
-            selectRect.width = min(selectRect.width + x * unitSize, img.cols - selectRect.x);
+    if (selected->rect.width > 0 && selected->rect.height > 0) {
+        if (selected->rect.width + x * unitSize > 0) {
+            selected->rect.width = min(selected->rect.width + x * unitSize, img.cols - selected->rect.x);
         }
-        if (selectRect.height + y * unitSize > 0) {
-            selectRect.height = min(selectRect.height + y * unitSize, img.rows - selectRect.y);
+        if (selected->rect.height + y * unitSize > 0) {
+            selected->rect.height = min(selected->rect.height + y * unitSize, img.rows - selected->rect.y);
         }
         showImage();
+    }
+}
+
+void remove() {
+    for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
+        if (&(*it) == selected) {
+            boxes.erase(it);
+            selected = NULL;
+            showImage();
+            break;
+        }
     }
 }
 
@@ -159,6 +202,7 @@ void help() {
     cout << "------> Press '+' to increase the unit size (default: 5)" << endl;
     cout << "------> Press '-' to decrease the unit size (default: 5)" << endl << endl;
 
+    cout << "------> Press 'CTRL+d' to remove selected box" << endl;
     cout << "------> Press 'CTRL+n' to go to next image" << endl;
     cout << "------> Press 'CTRL+p' to go to previous image" << endl << endl;
 
@@ -198,6 +242,9 @@ int main(int argc, char** argv) {
         // Wait until user press some key
         int key = waitKey(1000);
         switch (key) {
+        case 4: // CTRL+d
+            remove();
+            break;
         case 17: // CTRL+q
             return 0;
             break;
