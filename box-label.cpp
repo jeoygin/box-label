@@ -12,8 +12,10 @@ Mat img, display;
 Point pt1(0, 0);
 Point pt2(0, 0);
 Rect selectRect(0, 0, 0, 0);
+Rect originRect;
 
 bool clicked = false;
+bool selected = false;
 int unitSize = 5;
 
 int makedirs(char * path, mode_t mode) {
@@ -83,18 +85,30 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
         clicked = true;
         pt1.x = pt2.x = x;
         pt1.y = pt2.y = y;
+        if (selectRect.contains(Point(x, y))) {
+            selected = true;
+            originRect = Rect(selectRect);
+        } else {
+            selected = false;
+        }
         break;
     case CV_EVENT_LBUTTONUP:
         clicked = false;
+        selected = false;
         break;
     case CV_EVENT_MOUSEMOVE:
         if (clicked) {
             int x0 = min(pt1.x, pt2.x);
             int y0 = min(pt1.y, pt2.y);
+            if (selected) {
+                x0 = originRect.x + pt2.x - pt1.x;
+                y0 = originRect.y + pt2.y - pt1.y;
+            } else {
+                selectRect.width = max(pt1.x, pt2.x) - x0 + 1;
+                selectRect.height = max(pt1.y, pt2.y) - y0 + 1;
+            }
             selectRect.x = x0;
             selectRect.y = y0;
-            selectRect.width = max(pt1.x, pt2.x) - x0 + 1;
-            selectRect.height = max(pt1.y, pt2.y) - y0 + 1;
         }
         break;
     default:
