@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 2.8)
+project( box-label )
+find_package( OpenCV REQUIRED )
+add_executable( box-label box-label.cpp )
+target_link_libraries( box-label ${OpenCV_LIBS} )
