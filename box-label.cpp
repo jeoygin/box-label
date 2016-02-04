@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <libgen.h>
 #include <iostream>
+#include <fstream>
 
 #define MODE_VIEW 1
 #define MODE_EDIT 2
@@ -30,6 +31,10 @@ Point pt1(0, 0);
 Point pt2(0, 0);
 Rect selectRect(0, 0, 0, 0);
 Rect originRect;
+string displayWindowName = "ImageDisplay";
+
+string imageListPath;
+string workDir;
 
 bool clicked = false;
 bool moving = false;
@@ -37,7 +42,9 @@ Box* selected = NULL;
 int unitSize = 5;
 int mode = MODE_VIEW;
 string inputText;
+int curImageIdx;
 
+vector<string> images;
 vector<Box> boxes;
 
 int makedirs(char * path, mode_t mode) {
@@ -232,6 +239,44 @@ void leaveEditMode(bool save) {
     showImage();
 }
 
+bool loadImage(int idx) {
+    if (idx < 0 || idx >= images.size()) {
+        return false;
+    }
+
+    // Read image from file
+    img = imread(workDir + "/" + images.at(idx));
+    boxes.clear();
+    clicked = false;
+    moving = false;
+    selected = NULL;
+
+    // If fail to read the image
+    if (img.empty()) {
+        cerr << "Error loading the image " << images.at(idx) << endl;
+        return false;
+    } else {
+        cout << "Finish loading the image " << images.at(idx) << endl;
+        return true;
+    }
+}
+
+void nextImage() {
+    if (curImageIdx + 1 < images.size()) {
+        ++curImageIdx;
+        loadImage(curImageIdx);
+        showImage(images.at(curImageIdx));
+    }
+}
+
+void previousImage() {
+    if (curImageIdx > 0) {
+        --curImageIdx;
+        loadImage(curImageIdx);
+        showImage(images.at(curImageIdx));
+    }
+}
+
 void help() {
     cout << "======================== Help ========================" << endl;
     cout << "---------------- VIEW MODE ----------------" << endl;
@@ -274,6 +319,12 @@ void handleViewModeKey(int key) {
         break;
     case 5: // CTRL-e
         enterEditMode();
+        break;
+    case 14: // CTRL-n
+        nextImage();
+        break;
+    case 16: // CTRL-p
+        previousImage();
         break;
     case 17: // CTRL-q
         exit(0);
@@ -348,26 +399,41 @@ void handleEditModeKey(int key) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
+        cerr << "Usage: box-label image_list" << endl;
         return -1;
     }
-    // Read image from file
-    img = imread(argv[1]);
 
-    // If fail to read the image
-    if (img.empty()) {
-        cout << "Error loading the image" << endl;
+    imageListPath = string(argv[1]);
+    ifstream imageList(imageListPath);
+    if (imageList.is_open()) {
+        string name;
+        while (imageList >> name) {
+            images.push_back(name);
+        }
+        imageList.close();
+        cout << "Image list loaded: " << images.size() << " images" << endl;
+    } else {
+        cerr << "Unable to open file " << imageListPath << endl;
         return -1;
     }
+
+    workDir = imageListPath.substr(0, imageListPath.rfind("/"));
+    cout << "Work Dir: " << workDir << endl;
 
     help();
 
-    display = img.clone();
-
     // Create a window
-    namedWindow("ImageDisplay", 1);
-
+    namedWindow(displayWindowName, 1);
     // Set the callback function for any mouse event
-    setMouseCallback("ImageDisplay", onMouse, NULL);
+    setMouseCallback(displayWindowName, onMouse, NULL);
+
+    // Load the first image
+    if (images.size() > 0) {
+        curImageIdx = 0;
+        if (!loadImage(curImageIdx)) {
+            return -1;
+        }
+    }
 
     // Show the image
     showImage();
