@@ -5,6 +5,9 @@
 #include <libgen.h>
 #include <iostream>
 
+#define MODE_VIEW 1
+#define MODE_EDIT 2
+
 using namespace cv;
 using namespace std;
 
@@ -32,6 +35,8 @@ bool clicked = false;
 bool moving = false;
 Box* selected = NULL;
 int unitSize = 5;
+int mode = MODE_VIEW;
+string inputText;
 
 vector<Box> boxes;
 
@@ -72,7 +77,7 @@ void showImage(string text="") {
 
     if (!text.empty()) {
         int baseline = 0;
-        int fontFace = FONT_HERSHEY_SCRIPT_SIMPLEX;
+        int fontFace = CV_FONT_HERSHEY_DUPLEX;
         double fontScale = 2;
         int thickness = 3;
 
@@ -81,7 +86,7 @@ void showImage(string text="") {
         baseline += thickness;
 
         // center the text
-        Point textOrg((display.cols - textSize.width)/2,
+        Point textOrg(min((display.cols - textSize.width)/2, display.cols - textSize.width),
                       (display.rows + textSize.height)/2);
 
         // baseline
@@ -94,10 +99,32 @@ void showImage(string text="") {
                 Scalar(0, 255, 0), thickness, 8);
     }
 
+    if (mode == MODE_VIEW || mode == MODE_EDIT) {
+        string modeText = "VIEW";
+        if (mode == MODE_EDIT) {
+            modeText = "EDIT";
+        }
+
+        int baseline = 0;
+        int fontFace = CV_FONT_HERSHEY_SIMPLEX;
+        double fontScale = 1;
+        int thickness = 2;
+
+        Size textSize = getTextSize(modeText, fontFace, fontScale,
+                                    thickness, &baseline);
+        baseline += thickness;
+        putText(display, modeText, Point(display.cols - textSize.width - 10, textSize.height + 5),
+                fontFace, fontScale, Scalar(0, 255, 0), thickness, 8);
+    }
+
     imshow("ImageDisplay", display);
 }
 
 void onMouse(int event, int x, int y, int flags, void* userdata) {
+    if (mode == MODE_EDIT) {
+        return;
+    }
+
     if (clicked) {
         pt2.x = x;
         pt2.y = y;
@@ -188,8 +215,26 @@ void remove() {
     }
 }
 
+void enterEditMode() {
+    if (selected) {
+        mode = MODE_EDIT;
+        inputText = selected->content;
+        showImage(inputText);
+    }
+}
+
+void leaveEditMode(bool save) {
+    if (save) {
+        selected->content = inputText;
+    }
+    inputText = "";
+    mode = MODE_VIEW;
+    showImage();
+}
+
 void help() {
     cout << "======================== Help ========================" << endl;
+    cout << "---------------- VIEW MODE ----------------" << endl;
     cout << "------> Press 'i' to move up" << endl;
     cout << "------> Press 'k' to move down" << endl;
     cout << "------> Press 'j' to move right" << endl;
@@ -202,14 +247,103 @@ void help() {
     cout << "------> Press '+' to increase the unit size (default: 5)" << endl;
     cout << "------> Press '-' to decrease the unit size (default: 5)" << endl << endl;
 
-    cout << "------> Press 'CTRL+d' to remove selected box" << endl;
-    cout << "------> Press 'CTRL+n' to go to next image" << endl;
-    cout << "------> Press 'CTRL+p' to go to previous image" << endl << endl;
+    cout << "------> Press 'CTRL-e' to edit content" << endl;
+    cout << "------> Press 'CTRL-d' to remove box" << endl << endl;
+
+    cout << "------> Press 'CTRL-n' to go to next image" << endl;
+    cout << "------> Press 'CTRL-p' to go to previous image" << endl << endl;
 
     cout << "------> Press 'h' to get help" << endl;
-    cout << "------> Press 'CTRL+s' to save" << endl;
-    cout << "------> Press 'CTRL+q' to quit" << endl;
+    cout << "------> Press 'CTRL-s' to save" << endl;
+    cout << "------> Press 'CTRL-q' to quit" << endl;
+    cout << "-------------------------------------------" << endl << endl;
+
+    cout << "---------------- EDIT MODE ----------------" << endl;
+    cout << "------> Press 'ENTER' to confirm" << endl;
+    cout << "------> Press 'ESC' to cancel" << endl;
+    cout << "------> Press 'DEL' to delete last character" << endl;
+    cout << "------> Press 'CTRL-u' to delete all content" << endl;
+    cout << "-------------------------------------------" << endl;
     cout << "======================================================" << endl;
+}
+
+void handleViewModeKey(int key) {
+    switch (key) {
+    case 4: // CTRL-d
+        remove();
+        break;
+    case 5: // CTRL-e
+        enterEditMode();
+        break;
+    case 17: // CTRL-q
+        exit(0);
+        break;
+    case (int)'i':
+        move(0, -1);
+        break;
+    case (int)'k':
+        move(0, 1);
+        break;
+    case (int)'j':
+        move(-1, 0);
+        break;
+    case (int)'l':
+        move(1, 0);
+        break;
+    case (int)'>':
+        changeSize(1, 0);
+        break;
+    case (int)'<':
+        changeSize(-1, 0);
+        break;
+    case (int)'^':
+        changeSize(0, 1);
+        break;
+    case (int)'_':
+        changeSize(0, -1);
+        break;
+    case (int)'+':
+        changeUnitSize(1);
+        break;
+    case (int)'-':
+        changeUnitSize(-1);
+        break;
+    case (int)'h':
+        help();
+        break;
+    default:
+        showImage();
+        break;
+    }
+}
+
+void handleEditModeKey(int key) {
+    string showText = inputText;
+    switch (key) {
+    case 13: // Carriage Return, CTRL-m
+        leaveEditMode(true);
+        showText = "";
+        break;
+    case 21: // CTRL-U
+        inputText = "";
+        showText = inputText;
+        break;
+    case 27: // ESC
+        leaveEditMode(false);
+        showText = "";
+        break;
+    case 127: // DEL
+        inputText = inputText.substr(0, inputText.length() - 1);
+        showText = inputText;
+        break;
+    default:
+        if (key >= 32 && key <= 126) {
+            inputText += (char)key;
+            showText = inputText;
+        }
+        break;
+    }
+    showImage(showText);
 }
 
 int main(int argc, char** argv) {
@@ -236,54 +370,15 @@ int main(int argc, char** argv) {
     setMouseCallback("ImageDisplay", onMouse, NULL);
 
     // Show the image
-    imshow("ImageDisplay", display);
+    showImage();
 
     while (true) {
         // Wait until user press some key
         int key = waitKey(1000);
-        switch (key) {
-        case 4: // CTRL+d
-            remove();
-            break;
-        case 17: // CTRL+q
-            return 0;
-            break;
-        case (int)'i':
-            move(0, -1);
-            break;
-        case (int)'k':
-            move(0, 1);
-            break;
-        case (int)'j':
-            move(-1, 0);
-            break;
-        case (int)'l':
-            move(1, 0);
-            break;
-        case (int)'>':
-            changeSize(1, 0);
-            break;
-        case (int)'<':
-            changeSize(-1, 0);
-            break;
-        case (int)'^':
-            changeSize(0, 1);
-            break;
-        case (int)'_':
-            changeSize(0, -1);
-            break;
-        case (int)'+':
-            changeUnitSize(1);
-            break;
-        case (int)'-':
-            changeUnitSize(-1);
-            break;
-        case (int)'h':
-            help();
-            break;
-        default:
-            showImage();
-            break;
+        if (mode == MODE_VIEW) {
+            handleViewModeKey(key);
+        } else if (mode == MODE_EDIT) {
+            handleEditModeKey(key);
         }
     }
 
