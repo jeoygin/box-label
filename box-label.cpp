@@ -51,6 +51,7 @@ int unitSize = 5;
 int mode = MODE_VIEW;
 string inputText;
 int curImageIdx;
+int editPos;
 
 vector<string> images;
 vector<Box> boxes;
@@ -77,7 +78,7 @@ int makedirs(const char * path, mode_t mode) {
     return 0;
 }
 
-void showImage(string text="", double fontScale = 1) {
+void showImage(string text="", int textPos = -1, double fontScale = 1) {
     display = img.clone();
 
     for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
@@ -103,22 +104,47 @@ void showImage(string text="", double fontScale = 1) {
         int fontFace = CV_FONT_HERSHEY_DUPLEX;
         int thickness = 2;
 
-        Size textSize = getTextSize(text, fontFace, fontScale,
-                                    thickness, &baseline);
+        string formerText, latterText;
+        bool showPos = false;
+        if (textPos >= 0) {
+            formerText = text.substr(0, textPos);
+            latterText = text.substr(textPos);
+            showPos = true;
+        } else {
+            formerText = text;
+        }
+
+        Size formerTextSize = getTextSize(formerText, fontFace, fontScale,
+                                          thickness, &baseline);
+        Size latterTextSize = getTextSize(latterText, fontFace, fontScale,
+                                          thickness, &baseline);
+        int x = 0, y = (display.rows + max(formerTextSize.height, latterTextSize.height))/2;
+        int width = formerTextSize.width + latterTextSize.width;
+        if (formerTextSize.width > display.cols) {
+            x = display.cols - formerTextSize.width;
+        } else if (width < display.cols) {
+            x = (display.cols - width)/2;
+        }
         baseline += thickness;
 
         // center the text
-        Point textOrg(min((display.cols - textSize.width)/2, display.cols - textSize.width),
-                      (display.rows + textSize.height)/2);
+        Point textOrg(x, y);
 
         // baseline
         line(display, textOrg + Point(0, thickness),
-             textOrg + Point(textSize.width, thickness),
+             textOrg + Point(width, thickness),
              Scalar(0, 0, 255));
 
         // text
-        putText(display, text, textOrg, fontFace, fontScale,
+        putText(display, formerText, textOrg, fontFace, fontScale,
                 Scalar(0, 255, 0), thickness, 8);
+        if (showPos) {
+            line(display, Point(x + formerTextSize.width, y),
+                 Point(x + formerTextSize.width, y - max(formerTextSize.height, latterTextSize.height)),
+                 Scalar(0, 0, 255), 1);
+        }
+        putText(display, latterText, textOrg + Point(formerTextSize.width, 0),
+                fontFace, fontScale, Scalar(0, 255, 0), thickness, 8);
     }
 
     if (mode == MODE_VIEW || mode == MODE_EDIT) {
@@ -144,7 +170,7 @@ void showImage(string text="", double fontScale = 1) {
 
 void changeUnitSize(int value) {
     unitSize = max(1, unitSize + value);
-    showImage(to_string(unitSize), 2);
+    showImage(to_string(unitSize), -1, 2);
 }
 
 void move(int x, int y) {
@@ -182,6 +208,7 @@ void enterEditMode() {
     if (selected) {
         mode = MODE_EDIT;
         inputText = selected->content;
+        editPos = inputText.size();
         showImage(inputText);
     }
 }
@@ -342,8 +369,14 @@ void help() {
     cout << "---------------- EDIT MODE ----------------" << endl;
     cout << "------> Press 'ENTER' to confirm" << endl;
     cout << "------> Press 'ESC' to cancel" << endl;
-    cout << "------> Press 'DEL' to delete last character" << endl;
-    cout << "------> Press 'CTRL-u' to delete all content" << endl;
+    cout << "------> Press 'DEL' to delete one char backward" << endl;
+    cout << "------> Press 'CTRL-a' to move cursor to head" << endl;
+    cout << "------> Press 'CTRL-b' to move cursor backward" << endl;
+    cout << "------> Press 'CTRL-d' to delete one char forward" << endl;
+    cout << "------> Press 'CTRL-e' to move cursor to tail" << endl;
+    cout << "------> Press 'CTRL-f' to move cursor forward" << endl;
+    cout << "------> Press 'CTRL-k' to delete all from cursor to tail" << endl;
+    cout << "------> Press 'CTRL-u' to delete all from cursor to head" << endl;
     cout << "-------------------------------------------" << endl;
     cout << "======================================================" << endl;
 }
@@ -410,30 +443,54 @@ void handleViewModeKey(int key) {
 void handleEditModeKey(int key) {
     string showText = inputText;
     switch (key) {
+    case 1: // CTRL-a
+        editPos = 0;
+        break;
+    case 2: // CTRL-b
+        editPos = max(0, editPos - 1);
+        break;
+    case 4: // CTRL-d
+        inputText = inputText.substr(0, editPos) + inputText.substr(editPos + 1);
+        showText = inputText;
+        editPos = max(0, editPos - 1);
+        break;
+    case 5: // CTRL-e
+        editPos = inputText.length();
+        break;
+    case 6: // CTRL-f
+        editPos = min(editPos + 1, (int)inputText.length());
+        break;
+    case 11: // CTRL-k
+        inputText = inputText.substr(0, editPos);
+        showText = inputText;
+        break;
     case 13: // Carriage Return, CTRL-m
         leaveEditMode(true);
         showText = "";
         break;
-    case 21: // CTRL-U
-        inputText = "";
+    case 21: // CTRL-u
+        inputText = inputText.substr(editPos);
         showText = inputText;
+        editPos = 0;
         break;
     case 27: // ESC
         leaveEditMode(false);
         showText = "";
         break;
     case 127: // DEL
-        inputText = inputText.substr(0, inputText.length() - 1);
+        inputText = inputText.substr(0, editPos - 1) + inputText.substr(editPos);
         showText = inputText;
+        editPos = max(0, editPos - 1);
         break;
     default:
         if (key >= 32 && key <= 126) {
-            inputText += (char)key;
+            inputText = inputText.substr(0, editPos) + (char)key + inputText.substr(editPos);
             showText = inputText;
+            editPos++;
         }
         break;
     }
-    showImage(showText);
+    showImage(showText, editPos);
 }
 
 void onMouse(int event, int x, int y, int flags, void* userdata) {
