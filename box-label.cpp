@@ -6,6 +6,12 @@
 #include <iostream>
 #include <fstream>
 
+#if defined(_WIN32) || defined(__CYGWIN__)
+#define PATH_SEPARATOR '\\'
+#else
+#define PATH_SEPARATOR '/'
+#endif
+
 #define MODE_VIEW 1
 #define MODE_EDIT 2
 
@@ -35,6 +41,7 @@ string displayWindowName = "ImageDisplay";
 
 string imageListPath;
 string workDir;
+string boxDir;
 
 bool clicked = false;
 bool moving = false;
@@ -47,7 +54,7 @@ int curImageIdx;
 vector<string> images;
 vector<Box> boxes;
 
-int makedirs(char * path, mode_t mode) {
+int makedirs(const char * path, mode_t mode) {
     struct stat st = {0};
 
     if (stat(path, &st) == 0) {
@@ -58,7 +65,7 @@ int makedirs(char * path, mode_t mode) {
     }
 
     char subpath[512] = "";
-    char * delim = strrchr(path, '/');
+    char * delim = strrchr(path, PATH_SEPARATOR);
     if (delim != NULL) {
         strncat(subpath, path, delim - path);
         makedirs(subpath, mode);
@@ -69,24 +76,31 @@ int makedirs(char * path, mode_t mode) {
     return 0;
 }
 
-void showImage(string text="") {
+void showImage(string text="", double fontScale = 1) {
     display = img.clone();
 
     for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
         if (it->rect.width > 0 && it->rect.height > 0) {
+            Scalar color;
+            int thickness = 1;
             if (&(*it) == selected) {
-                rectangle(display, it->rect, Scalar(0, 0, 255), 1, 8, 0);
+                if (!it->content.empty()) {
+                    thickness = 2;
+                }
+                color = Scalar(0, 0, 255);
+            } else if (!it->content.empty()) {
+                color = Scalar(0, 255, 255);
             } else {
-                rectangle(display, it->rect, Scalar(0, 255, 0), 1, 8, 0);
+                color = Scalar(0, 255, 0);
             }
+            rectangle(display, it->rect, color, thickness, 8, 0);
         }
     }
 
     if (!text.empty()) {
         int baseline = 0;
         int fontFace = CV_FONT_HERSHEY_DUPLEX;
-        double fontScale = 2;
-        int thickness = 3;
+        int thickness = 2;
 
         Size textSize = getTextSize(text, fontFace, fontScale,
                                     thickness, &baseline);
@@ -188,7 +202,7 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
 
 void changeUnitSize(int value) {
     unitSize = max(1, unitSize + value);
-    showImage(to_string(unitSize));
+    showImage(to_string(unitSize), 2);
 }
 
 void move(int x, int y) {
@@ -200,7 +214,7 @@ void move(int x, int y) {
 }
 
 void changeSize(int x, int y) {
-    if (selected->rect.width > 0 && selected->rect.height > 0) {
+    if (selected && selected->rect.width > 0 && selected->rect.height > 0) {
         if (selected->rect.width + x * unitSize > 0) {
             selected->rect.width = min(selected->rect.width + x * unitSize, img.cols - selected->rect.x);
         }
@@ -239,42 +253,53 @@ void leaveEditMode(bool save) {
     showImage();
 }
 
-bool loadImage(int idx) {
+bool loadImage(int idx, Mat& img) {
     if (idx < 0 || idx >= images.size()) {
         return false;
     }
 
+    cout << "Loading the image '" << images.at(idx) << "' ";
+
     // Read image from file
-    img = imread(workDir + "/" + images.at(idx));
+    Mat newimg = imread(workDir + "/" + images.at(idx));
+
+    // If fail to read the image
+    if (newimg.empty()) {
+        cout << "[FAIL]" << endl;
+        return false;
+    }
+
     boxes.clear();
     clicked = false;
     moving = false;
     selected = NULL;
 
-    // If fail to read the image
-    if (img.empty()) {
-        cerr << "Error loading the image " << images.at(idx) << endl;
-        return false;
-    } else {
-        cout << "Finish loading the image " << images.at(idx) << endl;
-        return true;
-    }
+    img = newimg;
+
+    cout << "[DONE]" << endl;
+    return true;
 }
 
-void nextImage() {
-    if (curImageIdx + 1 < images.size()) {
+bool nextImage() {
+    while (curImageIdx + 1 < images.size()) {
         ++curImageIdx;
-        loadImage(curImageIdx);
-        showImage(images.at(curImageIdx));
+        if (loadImage(curImageIdx, img)) {
+            showImage(images.at(curImageIdx));
+            return true;
+        }
     }
+    return false;
 }
 
-void previousImage() {
-    if (curImageIdx > 0) {
+bool previousImage() {
+    while (curImageIdx > 0) {
         --curImageIdx;
-        loadImage(curImageIdx);
-        showImage(images.at(curImageIdx));
+        if (loadImage(curImageIdx, img)) {
+            showImage(images.at(curImageIdx));
+            return true;
+        }
     }
+    return false;
 }
 
 void help() {
@@ -405,20 +430,31 @@ int main(int argc, char** argv) {
 
     imageListPath = string(argv[1]);
     ifstream imageList(imageListPath);
+    cout << "Loading image list '" << imageListPath << "' ";
     if (imageList.is_open()) {
         string name;
         while (imageList >> name) {
             images.push_back(name);
         }
         imageList.close();
-        cout << "Image list loaded: " << images.size() << " images" << endl;
+        cout << "[DONE] " << images.size() << " images" << endl;
     } else {
-        cerr << "Unable to open file " << imageListPath << endl;
+        cout << "[FAIL] Unable to open file " << endl;
         return -1;
     }
 
-    workDir = imageListPath.substr(0, imageListPath.rfind("/"));
+    workDir = imageListPath.substr(0, imageListPath.rfind(PATH_SEPARATOR));
     cout << "Work Dir: " << workDir << endl;
+
+    // Create box dir
+    boxDir = workDir + PATH_SEPARATOR + "box";
+    cout << "Creating box dir '" << boxDir << "'";
+    if (makedirs(boxDir.c_str(), 0755) == 0) {
+        cout << " [DONE]" << endl;
+    } else {
+        cout << " [FAIL]" << endl;
+        return -1;
+    }
 
     help();
 
@@ -428,15 +464,10 @@ int main(int argc, char** argv) {
     setMouseCallback(displayWindowName, onMouse, NULL);
 
     // Load the first image
-    if (images.size() > 0) {
-        curImageIdx = 0;
-        if (!loadImage(curImageIdx)) {
-            return -1;
-        }
+    curImageIdx = -1;
+    if (!nextImage()) {
+        return -1;
     }
-
-    // Show the image
-    showImage();
 
     while (true) {
         // Wait until user press some key
