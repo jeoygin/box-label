@@ -209,7 +209,7 @@ void enterEditMode() {
         mode = MODE_EDIT;
         inputText = selected->content;
         editPos = inputText.size();
-        showImage(inputText);
+        showImage(inputText, editPos);
     }
 }
 
@@ -490,7 +490,11 @@ void handleEditModeKey(int key) {
         }
         break;
     }
-    showImage(showText, editPos);
+    if (mode == MODE_EDIT && showText.empty()) {
+        showImage("Press any key...");
+    } else {
+        showImage(showText, editPos);
+    }
 }
 
 void onMouse(int event, int x, int y, int flags, void* userdata) {
