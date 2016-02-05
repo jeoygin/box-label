@@ -43,6 +43,7 @@ string imageListPath;
 string workDir;
 string boxDir;
 
+bool imageLoaded = false;
 bool clicked = false;
 bool moving = false;
 Box* selected = NULL;
@@ -138,66 +139,7 @@ void showImage(string text="", double fontScale = 1) {
                 fontFace, fontScale, Scalar(0, 255, 0), thickness, 8);
     }
 
-    imshow("ImageDisplay", display);
-}
-
-void onMouse(int event, int x, int y, int flags, void* userdata) {
-    if (mode == MODE_EDIT) {
-        return;
-    }
-
-    if (clicked) {
-        pt2.x = x;
-        pt2.y = y;
-    }
-
-    switch(event) {
-    case CV_EVENT_LBUTTONDOWN:
-        clicked = true;
-        pt1.x = pt2.x = x;
-        pt1.y = pt2.y = y;
-        selected = NULL;
-        moving = false;
-        for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
-            if (it->rect.contains(pt1)) {
-                originRect = Rect(it->rect);
-                selected = &(*it);
-                break;
-            }
-        }
-        if (selected) {
-            moving = true;
-        } else {
-            boxes.push_back(Box(Rect(x, y, 1, 1)));
-            selected = &boxes.back();
-        }
-        break;
-    case CV_EVENT_LBUTTONUP:
-        clicked = false;
-        moving = false;
-        break;
-    case CV_EVENT_MOUSEMOVE:
-        if (clicked) {
-            int x0 = min(pt1.x, pt2.x);
-            int y0 = min(pt1.y, pt2.y);
-            if (moving) {
-                x0 = originRect.x + pt2.x - pt1.x;
-                y0 = originRect.y + pt2.y - pt1.y;
-            } else {
-                selected->rect.width = max(pt1.x, pt2.x) - x0 + 1;
-                selected->rect.height = max(pt1.y, pt2.y) - y0 + 1;
-            }
-            selected->rect.x = x0;
-            selected->rect.y = y0;
-        }
-        break;
-    default:
-        break;
-    }
-
-    if (clicked) {
-        showImage();
-    }
+    imshow(displayWindowName, display);
 }
 
 void changeUnitSize(int value) {
@@ -257,30 +199,98 @@ bool loadImage(int idx, Mat& img) {
     if (idx < 0 || idx >= images.size()) {
         return false;
     }
-
-    cout << "Loading the image '" << images.at(idx) << "' ";
+    string name = images.at(idx);
+    cout << "Loading the image '" << name << "' ";
 
     // Read image from file
-    Mat newimg = imread(workDir + "/" + images.at(idx));
+    Mat newimg = imread(workDir + PATH_SEPARATOR + name);
+    imageLoaded = false;
 
     // If fail to read the image
     if (newimg.empty()) {
         cout << "[FAIL]" << endl;
         return false;
+    } else {
+        cout << "[DONE]" << endl;
     }
 
     boxes.clear();
     clicked = false;
     moving = false;
     selected = NULL;
+    imageLoaded = true;
 
     img = newimg;
+    string boxfile = boxDir + PATH_SEPARATOR + name + "_" +
+        to_string(newimg.cols) + "x" + to_string(newimg.rows) + ".box";
 
-    cout << "[DONE]" << endl;
+    ifstream boxifs(boxfile);
+    if (boxifs.is_open()) {
+        cout << "Loading the box of image '" << boxfile << "'..." << endl;
+        string box;
+        while (getline(boxifs, box)) {
+            stringstream ss(box);
+            vector<string> elems;
+            string item, buf;
+            while (getline(ss, item, '\t')) {
+                elems.push_back(item);
+                if (buf.length() > 0) {
+                    buf.append("::");
+                }
+                buf.append(item);
+            }
+            cout << "    " << buf;
+            if (elems.size() < 4) {
+                cout << " [FAIL]" << endl;
+            } else {
+                Rect rect(stoi(elems.at(0)), stoi(elems.at(1)),
+                          stoi(elems.at(2)), stoi(elems.at(3)));
+                string content;
+                if (elems.size() >= 5) {
+                    content = elems.at(4);
+                }
+                boxes.push_back(Box(rect, content));
+                cout << " [DONE]" << endl;
+            }
+
+        }
+    }
+
     return true;
 }
 
+bool saveImage() {
+    if (!imageLoaded) {
+        return false;
+    }
+
+    string name = images.at(curImageIdx);
+    string boxfile = boxDir + PATH_SEPARATOR  + name + "_" +
+        to_string(img.cols) + "x" + to_string(img.rows) + ".box";
+    cout << "Saving the box of image '" << boxfile << "' ";
+
+    ofstream boxofs(boxfile);
+    if (boxofs.is_open()) {
+        for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
+            if (it->rect.width > 1 && it->rect.height > 1) {
+                boxofs << it->rect.x << '\t' << it->rect.y << '\t';
+                boxofs << it->rect.width << '\t' << it->rect.height << '\t';
+                boxofs << it->content << '\n';
+            } else {
+                boxes.erase(it);
+            }
+        }
+        boxofs.close();
+        cout << "[DONE]" << endl;
+        return true;
+    } else {
+        cout << "[FAIL]" << endl;
+        return false;
+    }
+}
+
 bool nextImage() {
+    saveImage();
     while (curImageIdx + 1 < images.size()) {
         ++curImageIdx;
         if (loadImage(curImageIdx, img)) {
@@ -292,6 +302,7 @@ bool nextImage() {
 }
 
 bool previousImage() {
+    saveImage();
     while (curImageIdx > 0) {
         --curImageIdx;
         if (loadImage(curImageIdx, img)) {
@@ -353,6 +364,9 @@ void handleViewModeKey(int key) {
         break;
     case 17: // CTRL-q
         exit(0);
+        break;
+    case 19: // CTRL-s
+        saveImage();
         break;
     case (int)'i':
         move(0, -1);
@@ -420,6 +434,69 @@ void handleEditModeKey(int key) {
         break;
     }
     showImage(showText);
+}
+
+void onMouse(int event, int x, int y, int flags, void* userdata) {
+    if (mode == MODE_EDIT) {
+        return;
+    }
+
+    if (clicked) {
+        pt2.x = x;
+        pt2.y = y;
+    }
+
+    switch(event) {
+    case CV_EVENT_LBUTTONDOWN:
+        clicked = true;
+        pt1.x = pt2.x = x;
+        pt1.y = pt2.y = y;
+        selected = NULL;
+        moving = false;
+        for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
+            if (it->rect.contains(pt1)) {
+                originRect = Rect(it->rect);
+                selected = &(*it);
+                break;
+            }
+        }
+        if (selected) {
+            moving = true;
+        } else {
+            boxes.push_back(Box(Rect(x, y, 1, 1)));
+            selected = &boxes.back();
+        }
+        break;
+    case CV_EVENT_LBUTTONUP:
+        if (selected && (selected->rect.width <= 1 || selected->rect.height <= 1)) {
+            remove();
+            selected = NULL;
+        }
+        clicked = false;
+        moving = false;
+        break;
+    case CV_EVENT_MOUSEMOVE:
+        if (clicked) {
+            int x0 = min(pt1.x, pt2.x);
+            int y0 = min(pt1.y, pt2.y);
+            if (moving) {
+                x0 = originRect.x + pt2.x - pt1.x;
+                y0 = originRect.y + pt2.y - pt1.y;
+            } else {
+                selected->rect.width = max(pt1.x, pt2.x) - x0 + 1;
+                selected->rect.height = max(pt1.y, pt2.y) - y0 + 1;
+            }
+            selected->rect.x = x0;
+            selected->rect.y = y0;
+        }
+        break;
+    default:
+        break;
+    }
+
+    if (clicked) {
+        showImage();
+    }
 }
 
 int main(int argc, char** argv) {
