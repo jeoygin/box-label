@@ -295,6 +295,12 @@ bool saveImage() {
     string boxfile = boxDir + PATH_SEPARATOR  + name + "_" +
         to_string(img.cols) + "x" + to_string(img.rows) + ".box";
     cout << "Saving the box of image '" << boxfile << "' ";
+    if (name.rfind(PATH_SEPARATOR) != std::string::npos) {
+        if (makedirs(boxfile.substr(0, boxfile.rfind(PATH_SEPARATOR)).c_str(), 0755) != 0) {
+            cout << "[FAIL]" << endl;
+            return false;
+        }
+    }
 
     ofstream boxofs(boxfile);
     if (boxofs.is_open()) {
@@ -581,7 +587,12 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    workDir = imageListPath.substr(0, imageListPath.rfind(PATH_SEPARATOR));
+    string::size_type lastSepPos = imageListPath.rfind(PATH_SEPARATOR);
+    if (lastSepPos != string::npos) {
+        workDir = imageListPath.substr(0, lastSepPos);
+    } else {
+        workDir = ".";
+    }
     cout << "Work Dir: " << workDir << endl;
 
     // Create box dir
