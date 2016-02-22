@@ -391,6 +391,7 @@ void handleViewModeKey(int key) {
     switch (key) {
     case 4: // CTRL-d
         remove();
+        saveImage();
         break;
     case 5: // CTRL-e
         enterEditMode();
@@ -402,6 +403,7 @@ void handleViewModeKey(int key) {
         previousImage();
         break;
     case 17: // CTRL-q
+        saveImage();
         exit(0);
         break;
     case 19: // CTRL-s
