@@ -102,20 +102,25 @@ void showImage(string text="", int textPos = -1, double fontScale = 1) {
 
     if (selected && borderMask > 0) {
         Rect rect = selected->rect;
+        Scalar color = Scalar(255, 0, 255);
+        int thickness = 1;
+        if (!selected->content.empty()) {
+            thickness = 2;
+        }
         if ((showBorderMask & 1) > 0) {
-            line(display, Point(rect.x, rect.y), Point(rect.x + rect.width - 1, rect.y), Scalar(0, 0, 255), 3);
+            line(display, Point(rect.x, rect.y), Point(rect.x + rect.width - 1, rect.y), color, thickness);
         }
 
         if ((showBorderMask & 4) > 0) {
-            line(display, Point(rect.x, rect.y + rect.height - 1), Point(rect.x + rect.width - 1, rect.y + rect.height - 1), Scalar(0, 0, 255), 3);
+            line(display, Point(rect.x, rect.y + rect.height - 1), Point(rect.x + rect.width - 1, rect.y + rect.height - 1), color, thickness);
         }
 
         if ((showBorderMask & 2) > 0) {
-            line(display, Point(rect.x + rect.width - 1, rect.y), Point(rect.x + rect.width - 1, rect.y + rect.height - 1), Scalar(0, 0, 255), 3);
+            line(display, Point(rect.x + rect.width - 1, rect.y), Point(rect.x + rect.width - 1, rect.y + rect.height - 1), color, thickness);
         }
 
         if ((showBorderMask & 8) > 0) {
-            line(display, Point(rect.x, rect.y), Point(rect.x, rect.y + rect.height - 1), Scalar(0, 0, 255), 3);
+            line(display, Point(rect.x, rect.y), Point(rect.x, rect.y + rect.height - 1), color, thickness);
         }
     }
 
@@ -582,7 +587,7 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
         if (!selected) {
             boxes.push_back(Box(Rect(x, y, 1, 1)));
             selected = &boxes.back();
-            borderMask = (1 << 4) - 1;
+            borderMask = (1 << 1) | (1 << 2);
         }
         if (selected->rect.width > 3 & selected->rect.height > 3) {
             checkBorder(x, y, borderMask);
