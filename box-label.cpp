@@ -45,13 +45,14 @@ string boxDir;
 
 bool imageLoaded = false;
 bool clicked = false;
-bool moving = false;
 Box* selected = NULL;
 int unitSize = 5;
 int mode = MODE_VIEW;
 string inputText;
 int curImageIdx;
 int editPos;
+int borderMask;
+int showBorderMask;
 
 vector<string> images;
 vector<Box> boxes;
@@ -96,6 +97,25 @@ void showImage(string text="", int textPos = -1, double fontScale = 1) {
                 color = Scalar(0, 255, 0);
             }
             rectangle(display, it->rect, color, thickness, 8, 0);
+        }
+    }
+
+    if (selected && borderMask > 0) {
+        Rect rect = selected->rect;
+        if ((showBorderMask & 1) > 0) {
+            line(display, Point(rect.x, rect.y), Point(rect.x + rect.width - 1, rect.y), Scalar(0, 0, 255), 3);
+        }
+
+        if ((showBorderMask & 4) > 0) {
+            line(display, Point(rect.x, rect.y + rect.height - 1), Point(rect.x + rect.width - 1, rect.y + rect.height - 1), Scalar(0, 0, 255), 3);
+        }
+
+        if ((showBorderMask & 2) > 0) {
+            line(display, Point(rect.x + rect.width - 1, rect.y), Point(rect.x + rect.width - 1, rect.y + rect.height - 1), Scalar(0, 0, 255), 3);
+        }
+
+        if ((showBorderMask & 8) > 0) {
+            line(display, Point(rect.x, rect.y), Point(rect.x, rect.y + rect.height - 1), Scalar(0, 0, 255), 3);
         }
     }
 
@@ -243,7 +263,6 @@ bool loadImage(int idx, Mat& img) {
 
     boxes.clear();
     clicked = false;
-    moving = false;
     selected = NULL;
     imageLoaded = true;
 
@@ -505,6 +524,32 @@ void handleEditModeKey(int key) {
     }
 }
 
+void checkBorder(int x, int y, int & borderMask) {
+    borderMask = 0;
+    if (selected) {
+        Rect rect = selected->rect;
+        if (x > rect.x - 3 && x < rect.x + rect.width + 3) {
+            if (abs(y - rect.y) < 3) {
+                borderMask |= 1;
+            }
+            if (abs(y - (rect.y + rect.height)) < 3) {
+                borderMask |= 1 << 2;
+            }
+        }
+        if (y > rect.y - 3 && y < rect.y + rect.height + 3) {
+            if (abs(x - rect.x) < 3) {
+                borderMask |= 1 << 3;
+            }
+            if (abs(x - (rect.x + rect.width)) < 3) {
+                borderMask |= 1 << 1;
+            }
+        }
+        if (borderMask == 0 && rect.contains(Point(x, y))) {
+            borderMask = (1 << 4) - 1;
+        }
+    }
+}
+
 void onMouse(int event, int x, int y, int flags, void* userdata) {
     if (mode == MODE_EDIT) {
         return;
@@ -520,52 +565,69 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
         clicked = true;
         pt1.x = pt2.x = x;
         pt1.y = pt2.y = y;
-        selected = NULL;
-        moving = false;
-        for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
-            if (it->rect.contains(pt1)) {
-                originRect = Rect(it->rect);
-                selected = &(*it);
-                break;
+        if (borderMask == 0) {
+            selected = NULL;
+            for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
+                Rect rect = it->rect;
+                if (rect.contains(pt1)) {
+                    borderMask = (1 << 4) - 1;
+                }
+                if (borderMask > 0) {
+                    selected = &(*it);
+                    break;
+                }
             }
         }
-        if (selected) {
-            moving = true;
-        } else {
+
+        if (!selected) {
             boxes.push_back(Box(Rect(x, y, 1, 1)));
             selected = &boxes.back();
+            borderMask = (1 << 4) - 1;
         }
+        if (selected->rect.width > 3 & selected->rect.height > 3) {
+            checkBorder(x, y, borderMask);
+        }
+        originRect = Rect(selected->rect);
         break;
     case CV_EVENT_LBUTTONUP:
-        if (selected && (selected->rect.width <= 1 || selected->rect.height <= 1)) {
+        if (selected && (selected->rect.width <= 3 || selected->rect.height <= 3)) {
             remove();
             selected = NULL;
         }
         clicked = false;
-        moving = false;
         break;
     case CV_EVENT_MOUSEMOVE:
         if (clicked) {
-            int x0 = min(pt1.x, pt2.x);
-            int y0 = min(pt1.y, pt2.y);
-            if (moving) {
-                x0 = originRect.x + pt2.x - pt1.x;
-                y0 = originRect.y + pt2.y - pt1.y;
-            } else {
-                selected->rect.width = max(pt1.x, pt2.x) - x0 + 1;
-                selected->rect.height = max(pt1.y, pt2.y) - y0 + 1;
+            if (borderMask > 0) {
+                int x0 = originRect.x, x1 = originRect.x + originRect.width - 1;
+                int y0 = originRect.y, y1 = originRect.y + originRect.height - 1;
+                if ((borderMask & 1) > 0) {
+                    y0 += pt2.y - pt1.y;
+                }
+                if ((borderMask & 2) > 0) {
+                    x1 += pt2.x - pt1.x;
+                }
+                if ((borderMask & 4) > 0) {
+                    y1 += pt2.y - pt1.y;
+                }
+                if ((borderMask & 8) > 0) {
+                    x0 += pt2.x - pt1.x;
+                }
+                selected->rect.x = min(x0, x1);
+                selected->rect.y = min(y0, y1);
+                selected->rect.width = abs(x1 - x0) + 1;
+                selected->rect.height = abs(y1 - y0) + 1;
             }
-            selected->rect.x = x0;
-            selected->rect.y = y0;
+        } else {
+            checkBorder(x, y, borderMask);
         }
+        checkBorder(x, y, showBorderMask);
         break;
     default:
         break;
     }
 
-    if (clicked) {
-        showImage();
-    }
+    showImage();
 }
 
 int main(int argc, char** argv) {
