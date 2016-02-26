@@ -79,7 +79,8 @@ int makedirs(const char * path, mode_t mode) {
     return 0;
 }
 
-void showImage(string text="", int textPos = -1, double fontScale = 1) {
+void drawImage(Mat &display, Box* selected=NULL, int borderMask = 0, int mode = 0,
+               string text="", int textPos = -1, double fontScale = 1) {
     display = img.clone();
 
     for (vector<Box>::iterator it = boxes.begin(); it != boxes.end(); it++) {
@@ -181,15 +182,20 @@ void showImage(string text="", int textPos = -1, double fontScale = 1) {
         int baseline = 0;
         int fontFace = CV_FONT_HERSHEY_SIMPLEX;
         double fontScale = 1;
+        Scalar color = Scalar(0, 255, 0);
         int thickness = 2;
 
         Size textSize = getTextSize(modeText, fontFace, fontScale,
                                     thickness, &baseline);
-        baseline += thickness;
+        putText(display, "No." + to_string(curImageIdx), Point(10, textSize.height + 5),
+                fontFace, fontScale, color, thickness, 8);
         putText(display, modeText, Point(display.cols - textSize.width - 10, textSize.height + 5),
-                fontFace, fontScale, Scalar(0, 255, 0), thickness, 8);
+                fontFace, fontScale, color, thickness, 8);
     }
+}
 
+void showImage(string text="", int textPos = -1, double fontScale = 1) {
+    drawImage(display, selected, borderMask, mode, text, textPos, fontScale);
     imshow(displayWindowName, display);
 }
 
@@ -346,6 +352,22 @@ bool saveImage() {
     }
 }
 
+bool exportImage() {
+    if (!saveImage()) {
+        return false;
+    }
+
+    string name = images.at(curImageIdx);
+    string imagefile = boxDir + PATH_SEPARATOR  + name + "_" +
+        to_string(img.cols) + "x" + to_string(img.rows) + ".jpg";
+    cout << "Exporting the image with boxes '" << imagefile << "' ";
+    Mat output;
+    drawImage(output);
+    imwrite(imagefile, output);
+    cout << "[DONE]" << endl;
+    return true;
+}
+
 bool nextImage() {
     saveImage();
     while (curImageIdx + 1 < images.size()) {
@@ -393,6 +415,7 @@ void help() {
 
     cout << "------> Press 'h' to get help" << endl;
     cout << "------> Press 'CTRL-s' to save" << endl;
+    cout << "------> Press 'CTRL-o' to export image with boxes" << endl;
     cout << "------> Press 'CTRL-q' to quit" << endl;
     cout << "-------------------------------------------" << endl << endl;
 
@@ -422,6 +445,9 @@ void handleViewModeKey(int key) {
         break;
     case 14: // CTRL-n
         nextImage();
+        break;
+    case 15: // CTRL-o
+        exportImage();
         break;
     case 16: // CTRL-p
         previousImage();
